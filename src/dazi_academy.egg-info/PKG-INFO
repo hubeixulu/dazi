@@ -1,0 +1,47 @@
+Metadata-Version: 2.4
+Name: dazi-academy
+Version: 0.1.0
+Summary: A friendly, offline typing tutor for Windows and macOS
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: PySide6<7,>=6.7
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-qt>=4.4; extra == "dev"
+Requires-Dist: pyinstaller>=6.8; extra == "dev"
+
+# 打字星球
+
+一个无广告、完全离线的现代打字学习软件，面向 Windows 与 macOS。内置英文指法、拼音中文、经典公版短诗课程，以及字母雨、打字竞速两个小游戏。
+
+## 开发运行
+
+需要 Python 3.11–3.13：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev]"
+python -m dazi
+```
+
+运行不依赖网络，学习数据保存在系统应用数据目录。可在设置中导出或恢复 JSON 备份；课程页支持导入 UTF-8 TXT 文件。
+
+## 测试
+
+```bash
+pytest
+```
+
+## 打包
+
+```bash
+pyinstaller packaging/dazi.spec --noconfirm
+```
+
+必须在目标系统上分别打包：Windows 产出 `打字星球.exe`，macOS 产出 `打字星球.app`。发布前建议配置 Windows Authenticode 与 Apple Developer ID 签名。
+
+## 内容说明
+
+基础键位课程为原创内容。《春晓》《登鹳雀楼》属于古典公版作品。新增内置文章前必须核验版权；用户自行导入的文本只保存在本机内存中，不会上传。
+
