@@ -1,0 +1,2 @@
+# Install the project together with its development, test, and packaging tools.
+-e .[dev]

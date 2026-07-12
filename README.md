@@ -17,9 +17,11 @@
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
-python -m pip install -e ".[dev]"
+python -m pip install -r requirements.txt
 python -m dazi
 ```
+
+依赖版本统一维护在 `pyproject.toml` 中；`requirements.txt` 会安装程序本体以及测试、打包所需工具。
 
 运行不依赖网络，学习数据保存在系统应用数据目录。可在设置中导出或恢复 JSON 备份；课程页支持导入 UTF-8 TXT 文件。
 
