@@ -39,10 +39,17 @@ def score_text(target: str, typed: str, elapsed_seconds: float, language: str) -
     return Score(correct, errors, accuracy, round(max(elapsed_seconds, 0), 1), speed, unit)
 
 
+def score_live_text(target: str, typed: str, elapsed_seconds: float, language: str) -> Score:
+    """Score only what has been entered; unfinished target text is not an error."""
+    if not typed:
+        return Score(0, 0, 100.0, round(max(elapsed_seconds, 0), 1), 0.0,
+                     "WPM" if language == "en" else "字/分钟")
+    return score_text(target[:len(typed)], typed, elapsed_seconds, language)
+
+
 def current_error_index(target: str, typed: str) -> int:
     """Return the first mismatching index, or -1 when the current prefix is valid."""
     for index, char in enumerate(typed):
         if index >= len(target) or target[index] != char:
             return index
     return -1
-

@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, Property, QStandardPaths, Signal, Slot
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtWidgets import QApplication
 
-from .scoring import current_error_index, score_text
+from .scoring import current_error_index, score_live_text, score_text
 from .storage import Storage
 from .difficulty import DIFFICULTIES, GAME_CONFIG
 
@@ -84,7 +84,7 @@ class Backend(QObject):
 
     @Slot(str, str, str, result="QVariantMap")
     def liveScore(self, target: str, typed: str, language: str):
-        score = score_text(target, typed, time.monotonic() - self._started_at, language).to_dict()
+        score = score_live_text(target, typed, time.monotonic() - self._started_at, language).to_dict()
         score["error_index"] = current_error_index(target, typed)
         score["complete"] = typed == target
         return score

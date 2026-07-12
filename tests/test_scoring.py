@@ -1,4 +1,4 @@
-from dazi.scoring import current_error_index, normalize, score_text
+from dazi.scoring import current_error_index, normalize, score_live_text, score_text
 
 
 def test_english_score_uses_wpm():
@@ -37,3 +37,11 @@ def test_zero_elapsed_is_safe():
     result = score_text("a", "a", 0, "en")
     assert result.speed > 0
 
+
+def test_live_score_does_not_count_untyped_text_as_errors():
+    empty = score_live_text("一篇很长的文章", "", 1, "zh")
+    assert empty.accuracy == 100
+    assert empty.errors == 0
+    partial = score_live_text("一篇很长的文章", "一篇错", 1, "zh")
+    assert partial.errors == 1
+    assert partial.accuracy == 66.7

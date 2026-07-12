@@ -16,20 +16,83 @@ ApplicationWindow {
     property var activeLesson: ({})
     property var practiceResult: ({})
     property bool practiceDone: false
+    property int practiceGeneration: 0
+    property var practiceParts: []
+    property var practiceTexts: []
     property string courseDifficulty: "normal"
     property string courseType: "全部"
     property int accent: 0
     readonly property var colors: ["#6657E8", "#27B99A", "#FF9C55", "#EF6C93"]
 
+    function splitPracticeText(text, language) {
+        var size = language === "zh" ? 32 : 68
+        var parts = []
+        var start = 0
+        while (start < text.length) {
+            var end = Math.min(start + size, text.length)
+            if (language === "zh" && end < text.length) {
+                var minimum = start + Math.floor(size * 0.55)
+                for (var i = end - 1; i >= minimum; --i) {
+                    if ("。！？；".indexOf(text.charAt(i)) >= 0) {
+                        end = i + 1
+                        break
+                    }
+                }
+            }
+            parts.push(text.slice(start, end))
+            start = end
+        }
+        return parts
+    }
+
+    function focusPracticeIndex(index, initialText) {
+        if (index < 0 || index >= practiceParts.length)
+            return
+        var rowsPerPage = Math.max(1, Math.floor(practiceList.height / 114))
+        var startsPage = index % rowsPerPage === 0
+        practiceList.positionViewAtIndex(index, startsPage ? ListView.Beginning : ListView.Contain)
+        Qt.callLater(function() {
+            if (startsPage)
+                practiceList.positionViewAtIndex(index, ListView.Beginning)
+            var item = practiceList.itemAtIndex(index)
+            if (item) {
+                if (initialText !== undefined && initialText !== "")
+                    item.setInputText(initialText)
+                item.focusInput()
+            }
+        })
+    }
+
+    function joinedPracticeText() {
+        return practiceTexts.join("")
+    }
+
+    function updatePracticeScore() {
+        if (practiceDone || !activeLesson.text)
+            return
+        var typed = joinedPracticeText()
+        practiceResult = backend.liveScore(activeLesson.text, typed, activeLesson.language)
+        if (typed === activeLesson.text) {
+            practiceResult = backend.finishPractice(activeLesson.id, activeLesson.text, typed, activeLesson.language, courseDifficulty)
+            practiceDone = true
+            backend.playFeedback("complete")
+        }
+    }
+
     function openLesson(lesson) {
         activeLesson = lesson
         practiceResult = ({accuracy: 100, speed: 0, speed_unit: lesson.language === "en" ? "WPM" : "字/分钟", errors: 0})
         practiceDone = false
+        practiceGeneration++
         courseDifficulty = lesson.difficulty || courseDifficulty
-        practiceInput.text = ""
+        practiceParts = splitPracticeText(lesson.text || "", lesson.language)
+        practiceTexts = practiceParts.map(function() { return "" })
         backend.startPractice()
         page = 2
-        practiceInput.forceActiveFocus()
+        Qt.callLater(function() {
+            var first = practiceList.itemAtIndex(0)
+            if (first) first.focusInput()
+        })
     }
 
     RowLayout {
@@ -220,39 +283,116 @@ ApplicationWindow {
                     Panel { Layout.fillWidth: true; Layout.fillHeight: true
                         ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 8
                             Text { text: "请照着输入"; color: "#817B91"; font.pixelSize: 12 }
-                            ColumnLayout {
+                            ListView {
+                                id: practiceList
                                 Layout.fillWidth: true
-                                spacing: 10
-                                TextArea {
-                                    Layout.fillWidth: true; Layout.preferredHeight: 72
-                                    text: activeLesson.text || ""
-                                    readOnly: true; wrapMode: Text.Wrap
-                                    color: "#3B3650"; font.pixelSize: activeLesson.language === "zh" ? 23 : 21
-                                    font.family: activeLesson.language === "en" ? "Menlo" : Qt.application.font.family
-                                    background: Rectangle { color: "#F7F6FB"; radius: 15; border.color: "#ECE9F5" }
-                                }
-                                TextArea {
-                                    id: practiceInput
-                                    Layout.fillWidth: true; Layout.preferredHeight: 72
-                                    enabled: !root.practiceDone
-                                    placeholderText: activeLesson.language === "zh" ? "在这里输入上面的文字……" : "Start typing here…"
-                                    wrapMode: TextEdit.Wrap; selectByMouse: true
-                                    color: practiceResult.error_index >= 0 ? "#D94D70" : "#302B47"
-                                    font.pixelSize: activeLesson.language === "zh" ? 22 : 20
-                                    background: Rectangle { color: "white"; radius: 15; border.width: 2; border.color: practiceResult.error_index >= 0 ? "#F07A98" : practiceInput.activeFocus ? "#786BEF" : "#DED9EC" }
-                                    onTextChanged: {
-                                        if (!root.practiceDone && activeLesson.text) {
-                                            root.practiceResult = backend.liveScore(activeLesson.text, text, activeLesson.language)
-                                            if (text === activeLesson.text) {
-                                                root.practiceResult = backend.finishPractice(activeLesson.id, activeLesson.text, text, activeLesson.language, root.courseDifficulty)
-                                                root.practiceDone = true
-                                                backend.playFeedback("complete")
+                                Layout.fillHeight: true
+                                clip: true
+                                spacing: 12
+                                model: root.practiceParts
+                                boundsBehavior: Flickable.StopAtBounds
+                                delegate: Column {
+                                    id: practiceRow
+                                    required property string modelData
+                                    required property int index
+                                    width: ListView.view.width
+                                    height: targetBox.height + rowInput.height + 6
+                                    function focusInput() { rowInput.forceActiveFocus() }
+
+                                    Rectangle {
+                                        id: targetBox
+                                        width: parent.width; height: 48; radius: 11
+                                        color: "#F7F6FB"; border.color: "#ECE9F5"
+                                        Row {
+                                            anchors.left: parent.left; anchors.leftMargin: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Repeater {
+                                                model: practiceRow.modelData.length
+                                                delegate: Text {
+                                                    id: targetChar
+                                                    required property int index
+                                                    readonly property string typed: root.practiceTexts[practiceRow.index] || ""
+                                                    readonly property string expected: practiceRow.modelData.charAt(index)
+                                                    readonly property bool entered: index < typed.length
+                                                    readonly property bool correct: entered && typed.charAt(index) === expected
+                                                    readonly property bool current: index === typed.length && rowInput.activeFocus
+                                                    text: expected
+                                                    color: correct ? "#B9B5C5" : entered ? "#E25578" : current ? "#6657E8" : "#3B3650"
+                                                    opacity: correct ? 0.58 : 1
+                                                    scale: current ? 1.08 : 1
+                                                    font.pixelSize: activeLesson.language === "zh" ? 21 : 19
+                                                    font.family: activeLesson.language === "en" ? "Menlo" : Qt.application.font.family
+                                                    Behavior on color { ColorAnimation { duration: 180 } }
+                                                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+                                                    Rectangle {
+                                                        anchors.left: parent.left; anchors.right: parent.right
+                                                        anchors.bottom: parent.bottom; anchors.bottomMargin: -3
+                                                        height: 2; radius: 1; color: "#7668F0"
+                                                        visible: targetChar.current
+                                                        SequentialAnimation on opacity {
+                                                            running: targetChar.current; loops: Animation.Infinite
+                                                            NumberAnimation { from: 1; to: 0.25; duration: 520 }
+                                                            NumberAnimation { from: 0.25; to: 1; duration: 520 }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
+                                    TextArea {
+                                        id: rowInput
+                                        y: targetBox.height + 6
+                                        width: parent.width; height: 48
+                                        enabled: !root.practiceDone
+                                        placeholderText: index === 0 ? (activeLesson.language === "zh" ? "输入这一行文字……" : "Type this line…") : ""
+                                        wrapMode: TextEdit.NoWrap; selectByMouse: true
+                                        color: "#302B47"
+                                        font.pixelSize: activeLesson.language === "zh" ? 21 : 19
+                                        font.family: activeLesson.language === "en" ? "Menlo" : Qt.application.font.family
+                                        background: Rectangle {
+                                            color: "white"; radius: 11; border.width: 2
+                                            border.color: rowInput.activeFocus ? "#786BEF" : "#DED9EC"
+                                        }
+                                        function acceptCommittedText() {
+                                            if (root.practiceDone || inputMethodComposing) return
+                                            var value = text
+                                            if (value.length > practiceRow.modelData.length &&
+                                                    value.slice(0, practiceRow.modelData.length) === practiceRow.modelData) {
+                                                var overflow = value.slice(practiceRow.modelData.length)
+                                                text = practiceRow.modelData
+                                                root.practiceTexts[index] = text
+                                                Qt.callLater(function() {
+                                                    root.focusPracticeIndex(index + 1, overflow)
+                                                })
+                                            } else {
+                                                root.practiceTexts[index] = value
+                                            }
+                                            root.practiceTexts = root.practiceTexts.slice(0)
+                                            root.updatePracticeScore()
+                                            if (text === practiceRow.modelData && index + 1 < root.practiceParts.length) {
+                                                Qt.callLater(function() {
+                                                    root.focusPracticeIndex(index + 1)
+                                                })
+                                            }
+                                        }
+                                        onTextChanged: {
+                                            acceptCommittedText()
+                                        }
+                                        onInputMethodComposingChanged: if (!inputMethodComposing) acceptCommittedText()
+                                        Connections {
+                                            target: root
+                                            function onPracticeGenerationChanged() { rowInput.clear() }
+                                        }
+                                    }
+                                    function setInputText(value) {
+                                        rowInput.text = value
+                                        rowInput.cursorPosition = rowInput.length
+                                    }
                                 }
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                             }
-                            FullKeyboard { Layout.fillWidth: true; visible: activeLesson.language === "en"; targetText: activeLesson.text || ""; typedLength: practiceInput.text.length; difficulty: root.courseDifficulty; showHands: true }
+                            FullKeyboard { Layout.fillWidth: true; visible: activeLesson.language === "en"; targetText: activeLesson.text || ""; typedLength: root.joinedPracticeText().length; difficulty: root.courseDifficulty; showHands: true }
                             RowLayout { Layout.fillWidth: true
                                 Text { text: activeLesson.source ? "来源：" + activeLesson.source : ""; color: "#9A94A7"; font.pixelSize: 10 }
                                 Item { Layout.fillWidth: true }
