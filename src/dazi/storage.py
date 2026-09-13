@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 class Storage:
@@ -40,6 +43,16 @@ class Storage:
                 attempts INTEGER NOT NULL, updated_at TEXT NOT NULL,
                 PRIMARY KEY(lesson_id, difficulty)
             );
+            CREATE TABLE IF NOT EXISTS custom_articles (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL,
+                content_hash TEXT NOT NULL UNIQUE,
+                language TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         result_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(results)")}
@@ -62,6 +75,9 @@ class Storage:
                     DROP TABLE progress;
                     ALTER TABLE progress_v2 RENAME TO progress;"""
             )
+        article_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(custom_articles)")}
+        if "author" not in article_columns:
+            self.connection.execute("ALTER TABLE custom_articles ADD COLUMN author TEXT NOT NULL DEFAULT ''")
         self.set_setting("schema_version", SCHEMA_VERSION)
 
     def set_setting(self, key: str, value) -> None:
@@ -105,19 +121,71 @@ class Storage:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    @staticmethod
+    def article_hash(text: str) -> str:
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+    def add_custom_article(self, article: dict) -> bool:
+        try:
+            self.connection.execute(
+                """INSERT INTO custom_articles(id,title,author,text,content_hash,language,difficulty,created_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (article["id"], article["title"], article.get("author", ""), article["text"],
+                 self.article_hash(article["text"]), article["language"], article["difficulty"],
+                 article.get("created_at", datetime.now(timezone.utc).isoformat())),
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def custom_articles(self) -> list[dict]:
+        rows = self.connection.execute(
+            "SELECT id,title,author,text,language,difficulty,created_at FROM custom_articles ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_custom_article(self, article_id: str) -> bool:
+        cursor = self.connection.execute("DELETE FROM custom_articles WHERE id=?", (article_id,))
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def has_delete_password(self) -> bool:
+        return bool(self.get_setting("delete_password", None))
+
+    def set_delete_password(self, password: str) -> None:
+        salt = secrets.token_bytes(16)
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000)
+        self.set_setting("delete_password", {"salt": salt.hex(), "digest": digest.hex()})
+
+    def verify_delete_password(self, password: str) -> bool:
+        stored = self.get_setting("delete_password", None)
+        if not isinstance(stored, dict) or "salt" not in stored or "digest" not in stored:
+            return False
+        try:
+            actual = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"), bytes.fromhex(stored["salt"]), 200_000
+            )
+            return hmac.compare_digest(actual.hex(), stored["digest"])
+        except (TypeError, ValueError):
+            return False
+
     def export_to(self, path: Path) -> None:
-        data = {"version": SCHEMA_VERSION, "settings": {}, "results": self.recent_results(10000)}
+        data = {"version": SCHEMA_VERSION, "settings": {}, "results": self.recent_results(10000),
+                "custom_articles": self.custom_articles()}
         for row in self.connection.execute("SELECT key,value FROM settings"):
             data["settings"][row["key"]] = json.loads(row["value"])
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def import_from(self, path: Path) -> None:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if data.get("version") not in (1, SCHEMA_VERSION) or not isinstance(data.get("results"), list):
+        if data.get("version") not in (1, 2, 3, SCHEMA_VERSION) or not isinstance(data.get("results"), list):
             raise ValueError("不支持的备份文件")
         with self.connection:
             self.connection.execute("DELETE FROM results")
             self.connection.execute("DELETE FROM progress")
+            self.connection.execute("DELETE FROM custom_articles")
             for key, value in data.get("settings", {}).items():
                 self.connection.execute(
                     "INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
@@ -130,6 +198,8 @@ class Storage:
                 self.save_result(item["lesson_id"], item["language"], score, item["stars"],
                                  item.get("difficulty", "normal"), item.get("mode", "practice"),
                                  item.get("combo", 0))
+            for article in data.get("custom_articles", []):
+                self.add_custom_article(article)
 
     def reset(self) -> None:
         with self.connection:

@@ -21,6 +21,13 @@ ApplicationWindow {
     property var practiceTexts: []
     property string courseDifficulty: "normal"
     property string courseType: "全部"
+    property string searchQuery: ""
+    property string importDifficulty: "normal"
+    property string importPath: ""
+    property string importFilename: ""
+    property var pendingDeleteLesson: ({})
+    property string noticeText: ""
+    property bool noticeSuccess: true
     property int accent: 0
     readonly property var colors: ["#6657E8", "#27B99A", "#FF9C55", "#EF6C93"]
 
@@ -77,6 +84,25 @@ ApplicationWindow {
             practiceDone = true
             backend.playFeedback("complete")
         }
+    }
+
+    function filteredLessons() {
+        var query = searchQuery.trim().toLowerCase()
+        return backend.lessons.filter(function(item) {
+            var matchesDifficulty = item.difficulty === courseDifficulty
+            var matchesType = courseType === "全部" || item.content_type === courseType
+            var haystack = ((item.title || "") + " " + (item.subtitle || "") + " " +
+                            (item.author || "") + " " + (item.text || "")).toLowerCase()
+            return matchesDifficulty && matchesType && (!query || haystack.indexOf(query) >= 0)
+        })
+    }
+
+    function showNotice(message, success) {
+        if (!message) return
+        noticeText = message
+        noticeSuccess = success
+        noticeBanner.visible = true
+        noticeTimer.restart()
     }
 
     function openLesson(lesson) {
@@ -224,17 +250,22 @@ ApplicationWindow {
                             Text { text: "课程地图"; color: "#25213D"; font.pixelSize: 29; font.bold: true }
                             Text { text: "从基准键开始，按自己的节奏一路前进。"; color: "#777189"; font.pixelSize: 14 }
                         }
-                        AppButton { text: "＋ 导入文本"; fillColor: "#EAE7FA"; textColor: "#5D50D3"; onClicked: backend.importText() }
+                        AppButton { text: "＋ 导入文章"; fillColor: "#EAE7FA"; textColor: "#5D50D3"; onClicked: { root.importDifficulty = root.courseDifficulty; root.importPath = ""; root.importFilename = ""; importTitle.text = ""; importAuthor.text = ""; importDialog.open() } }
                     }
                     RowLayout { Layout.fillWidth: true
                         DifficultyPicker { moduleKey: "course"; selected: root.courseDifficulty; onSelectedByUser: function(value) { root.courseDifficulty = value } }
                         Item { Layout.fillWidth: true }
-                        ComboBox { model: ["全部","课程","原创短文","古诗","古文","现代公版"]; onCurrentTextChanged: root.courseType = currentText }
-                        Text { text: backend.lessons.filter(function(x){ return x.difficulty === root.courseDifficulty && (root.courseType === "全部" || x.content_type === root.courseType) }).length + " 项"; color:"#817B91" }
+                        TextField {
+                            Layout.preferredWidth: 220; placeholderText: "搜索标题、作者或正文"
+                            onTextChanged: root.searchQuery = text
+                            background: Rectangle { color: "white"; radius: 11; border.color: parent.activeFocus ? "#786BEF" : "#DED9EC" }
+                        }
+                        ComboBox { model: ["全部","课程","原创短文","古诗","古文","现代公版","自定义文章"]; onCurrentTextChanged: root.courseType = currentText }
+                        Text { text: root.filteredLessons().length + " 项"; color:"#817B91" }
                     }
                     ListView {
                         Layout.fillWidth: true; Layout.fillHeight: true; spacing: 12; clip: true
-                        model: backend.lessons.filter(function(x){ return x.difficulty === root.courseDifficulty && (root.courseType === "全部" || x.content_type === root.courseType) })
+                        model: root.filteredLessons()
                         delegate: Panel {
                             required property var modelData
                             required property int index
@@ -252,6 +283,16 @@ ApplicationWindow {
                                     }
                                     Text { text: modelData.subtitle; color: "#817B91"; font.pixelSize: 12 }
                                     Text { text: "★".repeat(modelData.stars) + "☆".repeat(3-modelData.stars); color: "#F2A93B"; font.pixelSize: 14 }
+                                }
+                                AppButton {
+                                    visible: modelData.is_custom === true
+                                    implicitWidth: 72; text: "删除"; fillColor: "#FCE8ED"; textColor: "#C94D6B"
+                                    onClicked: {
+                                        root.pendingDeleteLesson = modelData
+                                        deletePassword.text = ""
+                                        deletePasswordConfirm.text = ""
+                                        deleteDialog.open()
+                                    }
                                 }
                                 AppButton { text: modelData.stars ? "再练一次" : "开始课程"; onClicked: root.openLesson(modelData) }
                             }
@@ -442,7 +483,7 @@ ApplicationWindow {
                     }
                     AppButton { text: "重置全部学习进度"; fillColor: "#FCE8ED"; textColor: "#C94D6B"; onClicked: resetDialog.open() }
                     Item { Layout.fillHeight: true }
-                    Text { text: "打字星球 0.2.0 · 无广告 · 完全离线"; color: "#9A94A7"; font.pixelSize: 11 }
+                    Text { text: "打字星球 0.3.1 · 无广告 · 完全离线"; color: "#9A94A7"; font.pixelSize: 11 }
                 }
             }
         }
@@ -460,6 +501,91 @@ ApplicationWindow {
     Component { id: letterRain; LetterRain { onCloseRequested: gameOverlay.visible = false } }
     Component { id: typingRace; TypingRace { onCloseRequested: gameOverlay.visible = false } }
     Component { id: spaceWords; SpaceWords {} }
+
+    Timer { id: noticeTimer; interval: 3600; onTriggered: noticeBanner.visible = false }
+    Rectangle {
+        id: noticeBanner; visible: false; z: 100; height: 48; radius: 14
+        width: Math.min(520, noticeLabel.implicitWidth + 56)
+        anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 18
+        color: root.noticeSuccess ? "#E3F7F1" : "#FCE8ED"
+        border.color: root.noticeSuccess ? "#86D7C2" : "#E9A2B4"
+        Text { id: noticeLabel; anchors.centerIn: parent; text: root.noticeText; color: root.noticeSuccess ? "#167A64" : "#B83E5D"; font.pixelSize: 13; font.bold: true }
+    }
+
+    Dialog {
+        id: importDialog
+        anchors.centerIn: parent; width: 480; modal: true
+        title: "导入自定义文章"; standardButtons: Dialog.Cancel
+        ColumnLayout {
+            width: parent.width; spacing: 12
+            Text { text: "选择 TXT 文件，然后可以修改标题并填写作者。"; color: "#5D5670"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                AppButton {
+                    text: root.importPath ? "重新选择文件" : "选择 TXT 文件"
+                    fillColor: "#EAE7FA"; textColor: "#5D50D3"
+                    onClicked: {
+                        var selection = backend.chooseTextFile()
+                        if (selection.ok) {
+                            root.importPath = selection.path
+                            root.importFilename = selection.filename
+                            importTitle.text = selection.title
+                        }
+                    }
+                }
+                Text { Layout.fillWidth: true; text: root.importFilename || "尚未选择文件"; elide: Text.ElideMiddle; color: root.importPath ? "#302B47" : "#9A94A7" }
+            }
+            TextField { id: importTitle; Layout.fillWidth: true; placeholderText: "文章标题（默认使用文件名）" }
+            TextField { id: importAuthor; Layout.fillWidth: true; placeholderText: "作者（可选）" }
+            Text { text: "文章难度"; color: "#302B47"; font.bold: true }
+            RowLayout {
+                Repeater {
+                    model: [{key:"easy", label:"简单"}, {key:"normal", label:"普通"}, {key:"hard", label:"困难"}]
+                    delegate: Rectangle {
+                        required property var modelData
+                        Layout.preferredWidth: 118; Layout.preferredHeight: 40; radius: 11
+                        color: root.importDifficulty === modelData.key ? "#6657E8" : "#ECE9F6"
+                        Text { anchors.centerIn: parent; text: modelData.label; color: root.importDifficulty === modelData.key ? "white" : "#625C72"; font.bold: true }
+                        MouseArea { anchors.fill: parent; onClicked: root.importDifficulty = modelData.key }
+                    }
+                }
+            }
+            Text { text: "相同正文只会保留一份；标题和作者都可以参与搜索。"; color: "#817B91"; font.pixelSize: 11 }
+            AppButton {
+                Layout.alignment: Qt.AlignRight; text: "导入文章"; enabled: root.importPath !== ""; opacity: enabled ? 1 : 0.5
+                onClicked: {
+                    var result = backend.importTextFile(root.importPath, root.importDifficulty, importTitle.text, importAuthor.text)
+                    if (result.ok) {
+                        root.courseDifficulty = result.difficulty
+                        importDialog.close()
+                    }
+                    root.showNotice(result.message, result.ok)
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        anchors.centerIn: parent; width: 430; modal: true
+        title: backend.hasDeletePassword ? "输入密码删除文章" : "设置家长删除密码"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: {
+            var result = backend.deleteCustomArticle(root.pendingDeleteLesson.id || "", deletePassword.text, deletePasswordConfirm.text)
+            root.showNotice(result.message, result.ok)
+        }
+        ColumnLayout {
+            width: parent.width; spacing: 12
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#5D5670"
+                text: backend.hasDeletePassword
+                      ? "确认删除《" + (root.pendingDeleteLesson.title || "") + "》？请输入家长密码。"
+                      : "首次删除需要设置家长密码（至少 4 个字符），以后删除文章都要输入该密码。"
+            }
+            TextField { id: deletePassword; Layout.fillWidth: true; placeholderText: backend.hasDeletePassword ? "家长密码" : "设置新密码"; echoMode: TextInput.Password }
+            TextField { id: deletePasswordConfirm; Layout.fillWidth: true; visible: !backend.hasDeletePassword; placeholderText: "再次输入新密码"; echoMode: TextInput.Password }
+        }
+    }
 
     Dialog {
         id: resetDialog

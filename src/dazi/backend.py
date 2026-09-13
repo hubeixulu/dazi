@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QStandardPaths, Signal, Slot
@@ -27,10 +28,27 @@ class Backend(QObject):
         articles_path = resource_dir / "articles.json"
         if articles_path.exists():
             self._lessons.extend(json.loads(articles_path.read_text(encoding="utf-8")))
+        self._builtin_lessons = list(self._lessons)
         base = data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
         self.storage = Storage(base / "dazi.db")
+        self._lessons.extend(self._custom_lessons_from_storage())
         self._started_at = time.monotonic()
         self._last_result: dict = {}
+
+    def _custom_lessons_from_storage(self) -> list[dict]:
+        return [self._custom_lesson(article) for article in self.storage.custom_articles()]
+
+    @staticmethod
+    def _custom_lesson(article: dict) -> dict:
+        author = article.get("author", "")
+        return {
+            "id": article["id"], "title": article["title"], "author": author,
+            "subtitle": ("作者：" + author + " · " if author else "") + "自定义导入文章",
+            "language": article["language"],
+            "difficulty": article["difficulty"], "level": "自定义", "keys": "",
+            "text": article["text"], "source": "用户导入",
+            "content_type": "自定义文章", "is_custom": True,
+        }
 
     @Property("QVariantList", notify=lessonsChanged)
     def lessons(self):
@@ -133,20 +151,82 @@ class Backend(QObject):
         if self.soundEnabled and kind in {"complete", "hit", "error"}:
             QApplication.beep()
 
-    @Slot()
-    def importText(self):
-        path, _ = QFileDialog.getOpenFileName(None, "导入练习文本", "", "文本文件 (*.txt)")
-        if not path:
-            return
-        text = Path(path).read_text(encoding="utf-8-sig").strip()
+    @Property(bool, notify=settingsChanged)
+    def hasDeletePassword(self):
+        return self.storage.has_delete_password()
+
+    def _import_text_path(self, path: Path, difficulty: str,
+                          title: str = "", author: str = "") -> dict:
+        if difficulty not in DIFFICULTIES:
+            return {"ok": False, "message": "请选择文章难度。"}
+        try:
+            text = path.read_text(encoding="utf-8-sig").strip()
+        except (OSError, UnicodeError):
+            return {"ok": False, "message": "无法读取文件，请确认它是 UTF-8 文本文件。"}
         if not text:
-            return
-        language = "zh" if any("\u4e00" <= c <= "\u9fff" for c in text) else "en"
-        self._lessons.append({"id": "custom-" + str(int(time.time())), "title": Path(path).stem,
-                              "subtitle": "自定义导入课程", "language": language,
-                              "level": "自定义", "keys": "", "text": text[:3000],
-                              "source": "用户导入"})
+            return {"ok": False, "message": "文章内容为空，未导入。"}
+        text = text[:3000]
+        content_hash = self.storage.article_hash(text)
+        if any(self.storage.article_hash(item.get("text", "")) == content_hash for item in self._lessons):
+            return {"ok": False, "duplicate": True, "message": "这篇文章已经存在，没有重复导入。"}
+        article = {
+            "id": "custom-" + uuid.uuid4().hex,
+            "title": title.strip() or path.stem,
+            "author": author.strip(),
+            "text": text,
+            "language": "zh" if any("\u4e00" <= c <= "\u9fff" for c in text) else "en",
+            "difficulty": difficulty,
+        }
+        if not self.storage.add_custom_article(article):
+            return {"ok": False, "duplicate": True, "message": "这篇文章已经存在，没有重复导入。"}
+        self._lessons.append(self._custom_lesson(article))
         self.lessonsChanged.emit()
+        label = DIFFICULTIES[difficulty]["label"]
+        return {"ok": True, "difficulty": difficulty,
+                "message": f"《{article['title']}》已成功导入到“{label}”。"}
+
+    @Slot(result="QVariantMap")
+    def chooseTextFile(self):
+        path, _ = QFileDialog.getOpenFileName(None, "选择练习文本", "", "文本文件 (*.txt)")
+        if not path:
+            return {"ok": False, "cancelled": True}
+        selected = Path(path)
+        return {"ok": True, "path": str(selected), "title": selected.stem,
+                "filename": selected.name}
+
+    @Slot(str, str, str, str, result="QVariantMap")
+    def importTextFile(self, path: str, difficulty: str, title: str, author: str):
+        if not path:
+            return {"ok": False, "message": "请先选择 TXT 文件。"}
+        return self._import_text_path(Path(path), difficulty, title, author)
+
+    @Slot(str, result="QVariantMap")
+    def importText(self, difficulty: str):
+        selection = self.chooseTextFile()
+        if not selection.get("ok"):
+            return {"ok": False, "cancelled": True, "message": ""}
+        return self._import_text_path(Path(selection["path"]), difficulty, selection["title"])
+
+    @Slot(str, str, str, result="QVariantMap")
+    def deleteCustomArticle(self, article_id: str, password: str, confirmation: str):
+        lesson = next((item for item in self._lessons
+                       if item.get("id") == article_id and item.get("is_custom")), None)
+        if lesson is None:
+            return {"ok": False, "message": "没有找到这篇自定义文章。"}
+        if not self.storage.has_delete_password():
+            if len(password) < 4:
+                return {"ok": False, "message": "新密码至少需要 4 个字符。"}
+            if password != confirmation:
+                return {"ok": False, "message": "两次输入的密码不一致。"}
+            self.storage.set_delete_password(password)
+            self.settingsChanged.emit()
+        elif not self.storage.verify_delete_password(password):
+            return {"ok": False, "message": "密码不正确，文章未删除。"}
+        if not self.storage.delete_custom_article(article_id):
+            return {"ok": False, "message": "删除失败，请稍后重试。"}
+        self._lessons = [item for item in self._lessons if item.get("id") != article_id]
+        self.lessonsChanged.emit()
+        return {"ok": True, "message": f"《{lesson['title']}》已删除。"}
 
     @Slot()
     def exportBackup(self):
@@ -159,6 +239,7 @@ class Backend(QObject):
         path, _ = QFileDialog.getOpenFileName(None, "恢复学习备份", "", "JSON (*.json)")
         if path:
             self.storage.import_from(Path(path))
+            self._lessons = list(self._builtin_lessons) + self._custom_lessons_from_storage()
             self.progressChanged.emit()
             self.lessonsChanged.emit()
             self.settingsChanged.emit()
