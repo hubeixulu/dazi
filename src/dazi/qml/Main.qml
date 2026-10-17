@@ -450,10 +450,11 @@ ApplicationWindow {
                 ColumnLayout { anchors.fill: parent; anchors.margins: 34; spacing: 20
                     Text { text: "趣味游戏"; color: "#25213D"; font.pixelSize: 29; font.bold: true }
                     Text { text: "把练习变成冒险——先准确，再加速。"; color: "#777189"; font.pixelSize: 14 }
-                    RowLayout { Layout.fillWidth: true; Layout.fillHeight: true; spacing: 20
+                    GridLayout { Layout.fillWidth: true; Layout.fillHeight: true; columns: 2; columnSpacing: 16; rowSpacing: 16
                         GameCard { Layout.fillWidth: true; Layout.fillHeight: true; emoji: "☂"; title: "字母雨"; description: "在字母落地之前按下对应按键，训练反应与键位记忆。"; gradientA: "#6859E7"; gradientB: "#8D7DF5"; onPlay: { gameLoader.sourceComponent = letterRain; gameOverlay.visible = true } }
                         GameCard { Layout.fillWidth: true; Layout.fillHeight: true; emoji: "🏁"; title: "打字竞速"; description: "准确输入短句推动飞船前进，用稳定节奏冲过终点。"; gradientA: "#20AE91"; gradientB: "#65D2AE"; onPlay: { gameLoader.sourceComponent = typingRace; gameOverlay.visible = true } }
                         GameCard { Layout.fillWidth: true; Layout.fillHeight: true; emoji: "👾"; title: "单词太空战"; description: "输入敌机单词发射光束，挑战连击与 Boss 波次。"; gradientA: "#E5668C"; gradientB: "#F09A6B"; onPlay: { gameLoader.sourceComponent = spaceWords; gameOverlay.visible = true } }
+                        GameCard { Layout.fillWidth: true; Layout.fillHeight: true; emoji: "🚓"; title: "警察抓小偷"; description: "打出英文路标追击小偷，穿过街区、应对路障，在逃脱前完成抓捕！"; gradientA: "#3068BC"; gradientB: "#42B1A2"; onPlay: { gameLoader.sourceComponent = policeChase; gameOverlay.visible = true } }
                     }
                 }
             }
@@ -483,7 +484,7 @@ ApplicationWindow {
                     }
                     AppButton { text: "重置全部学习进度"; fillColor: "#FCE8ED"; textColor: "#C94D6B"; onClicked: resetDialog.open() }
                     Item { Layout.fillHeight: true }
-                    Text { text: "打字星球 0.3.1 · 无广告 · 完全离线"; color: "#9A94A7"; font.pixelSize: 11 }
+                    Text { text: "打字星球 0.4.0 · 无广告 · 完全离线"; color: "#9A94A7"; font.pixelSize: 11 }
                 }
             }
         }
@@ -501,6 +502,7 @@ ApplicationWindow {
     Component { id: letterRain; LetterRain { onCloseRequested: gameOverlay.visible = false } }
     Component { id: typingRace; TypingRace { onCloseRequested: gameOverlay.visible = false } }
     Component { id: spaceWords; SpaceWords {} }
+    Component { id: policeChase; PoliceChase { onScreen: gameOverlay.visible } }
 
     Timer { id: noticeTimer; interval: 3600; onTriggered: noticeBanner.visible = false }
     Rectangle {

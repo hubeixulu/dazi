@@ -22,5 +22,10 @@ GAME_CONFIG = {
         "normal": {"spawn_ms": 1000, "fall_step": 2.0, "lives": 3, "word_set": "normal"},
         "hard": {"spawn_ms": 720, "fall_step": 2.8, "lives": 2, "word_set": "hard"},
     },
+    "police-chase": {
+        "easy": {"stages": 5, "escape_seconds": 150, "lives": 5, "speed": "relaxed"},
+        "normal": {"stages": 6, "escape_seconds": 115, "lives": 4, "speed": "steady"},
+        "hard": {"stages": 7, "escape_seconds": 90, "lives": 3, "speed": "fast"},
+    },
 }
 

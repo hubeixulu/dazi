@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from .scoring import current_error_index, score_live_text, score_text
 from .storage import Storage
 from .difficulty import DIFFICULTIES, GAME_CONFIG
+from .pursuit import PursuitGame
 
 
 class Backend(QObject):
@@ -20,6 +21,7 @@ class Backend(QObject):
     resultChanged = Signal()
     settingsChanged = Signal()
     difficultyChanged = Signal()
+    pursuitChanged = Signal()
 
     def __init__(self, resource_dir: Path, data_dir: Path | None = None):
         super().__init__()
@@ -34,6 +36,8 @@ class Backend(QObject):
         self._lessons.extend(self._custom_lessons_from_storage())
         self._started_at = time.monotonic()
         self._last_result: dict = {}
+        self._pursuit = PursuitGame()
+        self._pursuit_result_saved = False
 
     def _custom_lessons_from_storage(self) -> list[dict]:
         return [self._custom_lesson(article) for article in self.storage.custom_articles()]
@@ -127,6 +131,36 @@ class Backend(QObject):
         self.storage.save_result("game-" + game, "game", score,
                                  min(3, max(1, score_value // 10)), difficulty, "game", combo)
         self.progressChanged.emit()
+
+    @Property("QVariantMap", notify=pursuitChanged)
+    def pursuitState(self):
+        return self._pursuit.state()
+
+    @Slot(str, result="QVariantMap")
+    def pursuitStart(self, difficulty: str):
+        if difficulty not in DIFFICULTIES:
+            return self._pursuit.state()
+        self._pursuit_result_saved = False
+        state = self._pursuit.start(difficulty)
+        self.pursuitChanged.emit()
+        return state
+
+    def _pursuit_update(self, state: dict) -> dict:
+        if state["phase"] in {"won", "lost"} and not self._pursuit_result_saved:
+            self._pursuit_result_saved = True
+            self.saveGameScore("police-chase", state["score"], state["elapsed"],
+                               state["difficulty"], state["best_combo"], state["accuracy"])
+            self.playFeedback("complete" if state["phase"] == "won" else "error")
+        self.pursuitChanged.emit()
+        return state
+
+    @Slot(str, result="QVariantMap")
+    def pursuitSubmit(self, typed: str):
+        return self._pursuit_update(self._pursuit.submit(typed))
+
+    @Slot(result="QVariantMap")
+    def pursuitTick(self):
+        return self._pursuit_update(self._pursuit.tick())
 
     @Property("QVariantMap", constant=True)
     def difficultyConfig(self):
