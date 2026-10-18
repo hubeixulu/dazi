@@ -1,0 +1,142 @@
+name: Build and publish desktop apps
+run-name: Build ${{ inputs.release_tag || github.ref_name }} (${{ inputs.platform || 'both' }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to build and publish
+        required: true
+        default: v0.4.0
+        type: string
+      platform:
+        description: Platform to build
+        required: true
+        default: windows
+        type: choice
+        options: [windows, macos, both]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x64
+          - os: macos-15
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        with:
+          python-version: "3.12"
+      - name: Verify version tag
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        shell: python
+        run: |
+          import os, re, tomllib
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Invalid version tag'
+          version = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+          assert tag == 'v' + version, 'Tag and application version differ'
+      - name: Install dependencies
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        run: python -m pytest -q
+      - name: Build application
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        run: pyinstaller packaging/dazi.spec --noconfirm
+      - name: Smoke test packaged Windows executable
+        if: runner.os == 'Windows' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
+        shell: python
+        run: |
+          import os, subprocess, tempfile
+          from pathlib import Path
+          exe = Path('dist/打字星球/打字星球.exe').resolve()
+          assert exe.is_file(), 'Missing Windows executable'
+          assert exe.read_bytes()[:2] == b'MZ', 'Not a PE executable'
+          with tempfile.TemporaryDirectory() as data:
+              env = dict(os.environ, APPDATA=data, LOCALAPPDATA=data, QT_QPA_PLATFORM='offscreen')
+              process = subprocess.Popen([str(exe)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+              try:
+                  out, err = process.communicate(timeout=10)
+              except subprocess.TimeoutExpired:
+                  process.terminate()
+                  out, err = process.communicate(timeout=15)
+                  print('Windows executable remained running for smoke test.')
+              else:
+                  raise RuntimeError(f'Executable exited early ({process.returncode}): {out!r} {err!r}')
+      - name: Verify macOS application
+        if: runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
+        run: codesign --verify --deep --strict 'dist/打字星球.app'
+      - name: Zip macOS app
+        if: runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: ditto -c -k --sequesterRsrc --keepParent 'dist/打字星球.app' "dist/dazi-${RELEASE_TAG}-macos-arm64.zip"
+      - name: Zip Windows portable application
+        if: runner.os == 'Windows' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        shell: pwsh
+        run: Compress-Archive -LiteralPath 'dist/打字星球' -DestinationPath "dist/dazi-$env:RELEASE_TAG-windows-x64.zip"
+      - name: Generate archive checksum
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        shell: python
+        run: |
+          import hashlib
+          from pathlib import Path
+          for archive in Path('dist').glob('dazi-*.zip'):
+              digest = hashlib.file_digest(archive.open('rb'), 'sha256').hexdigest()
+              archive.with_suffix('.zip.sha256').write_text(f'{digest}  {archive.name}\n', encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        with:
+          name: dazi-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/dazi-*.zip
+            dist/dazi-*.zip.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dazi-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish archives to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        shell: bash
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --verify-tag --title "打字星球 $RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

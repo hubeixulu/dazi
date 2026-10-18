@@ -42,7 +42,15 @@ pytest
 pyinstaller packaging/dazi.spec --noconfirm
 ```
 
-PyInstaller 不能跨系统构建：在 Windows 运行会产出 Windows 程序，在 macOS 运行会产出 `打字星球.app`。发布时 macOS 应将 `.app` 整包压缩为 ZIP，Windows 则将完整 `dist/打字星球/` 文件夹压缩为 ZIP（不仅仅是 `.exe`，还包含其依赖目录）。当前本地已构建 Apple 芯片 Mac 压缩包 `dist/dazi-v0.4.0-macos-arm64.zip`；Windows 可执行文件仍需在 Windows 系统运行上述命令生成。自动化构建/发布工作流尚未上传，因为当前 GitHub 令牌缺少 `workflow` 权限；配置好权限后才能上传工作流并发布双平台下载。未经开发者签名/公证的构建产物首次启动时可能出现系统安全提示。
+PyInstaller 不能跨系统构建：在 Windows 运行会产出 Windows 程序，在 macOS 运行会产出 `打字星球.app`。macOS 应将 `.app` 整包压缩为 ZIP，Windows 则将完整 `dist/打字星球/` 文件夹压缩为 ZIP（不仅仅是 `.exe`，还包含其依赖目录）。
+
+GitHub Actions 的 **Build and publish desktop apps** 工作流支持：
+
+- 推送 `v*` 标签时分别在 Windows x64 和 Apple 芯片 macOS 环境构建，并发布到对应 Release。
+- 在 Actions 页面手动运行，输入已有版本标签（例如 `v0.4.0`），选择 `windows`、`macos` 或 `both`，即可为现有 Release 补充对应平台的下载包；构建源码固定为该标签，不移动旧标签。
+- 发布前运行测试；Windows 可执行文件经过原生启动冒烟检查；ZIP 附带 SHA-256 校验文件。
+
+下载入口：[项目 Releases](https://github.com/hubeixulu/dazi/releases)。Windows 用户请完整解压 ZIP 后运行文件夹中的 `打字星球.exe`，不要只复制 EXE。Mac 用户解压后打开 `打字星球.app`。构建产物未经开发者签名/公证，首次启动可能出现系统安全提示。
 
 ## 内容说明
 

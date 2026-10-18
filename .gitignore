@@ -5,5 +5,4 @@ __pycache__/
 build/
 dist/
 *.spec.bak
-.github/workflows/build.yml
 .DS_Store
