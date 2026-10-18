@@ -50,7 +50,14 @@ GitHub Actions 的 **Build and publish desktop apps** 工作流支持：
 - 在 Actions 页面手动运行，输入已有版本标签（例如 `v0.4.0`），选择 `windows`、`macos` 或 `both`，即可为现有 Release 补充对应平台的下载包；构建源码固定为该标签，不移动旧标签。
 - 发布前运行测试；Windows 可执行文件经过原生启动冒烟检查；ZIP 附带 SHA-256 校验文件。
 
-下载入口：[项目 Releases](https://github.com/hubeixulu/dazi/releases)。Windows 用户请完整解压 ZIP 后运行文件夹中的 `打字星球.exe`，不要只复制 EXE。Mac 用户解压后打开 `打字星球.app`。构建产物未经开发者签名/公证，首次启动可能出现系统安全提示。
+### v0.4.0 下载
+
+- [Windows x64 便携版](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-windows-x64.zip)（约 176 MiB）：完整解压 ZIP 后运行文件夹中的 `打字星球.exe`，不要只复制 EXE。该包已在 GitHub Windows 环境通过测试和启动冒烟检查。
+- [Windows SHA-256 校验文件](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-windows-x64.zip.sha256)。
+- [Mac Apple 芯片版](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-macos-arm64.zip)：解压后打开 `打字星球.app`。
+- [全部 Releases](https://github.com/hubeixulu/dazi/releases)。
+
+构建产物未经开发者签名/公证，首次启动可能出现系统安全提示。
 
 ## 内容说明
 
