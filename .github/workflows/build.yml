@@ -7,7 +7,7 @@ on:
       release_tag:
         description: Existing version tag to build and publish
         required: true
-        default: v0.4.0
+        default: v0.5.0
         type: string
       platform:
         description: Platform to build
@@ -68,6 +68,21 @@ jobs:
       - name: Build application
         if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
         run: pyinstaller packaging/dazi.spec --noconfirm
+      - name: Verify packaged game art
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform
+        shell: python
+        run: |
+          import json, platform
+          from pathlib import Path
+          if platform.system() == 'Windows':
+              root = Path('dist/打字星球/_internal/dazi/resources/games')
+          else:
+              assert platform.machine() == 'arm64', 'Expected Apple silicon build'
+              root = Path('dist/打字星球.app/Contents/Resources/dazi/resources/games')
+          manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+          for name in manifest['sprites']:
+              assert (root / (name + '.png')).is_file(), 'Missing game art: ' + name
+          print('Verified all', len(manifest['sprites']), 'packaged game images.')
       - name: Smoke test packaged Windows executable
         if: runner.os == 'Windows' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
         shell: python
@@ -91,6 +106,25 @@ jobs:
       - name: Verify macOS application
         if: runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
         run: codesign --verify --deep --strict 'dist/打字星球.app'
+      - name: Smoke test packaged macOS application
+        if: runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
+        shell: python
+        run: |
+          import os, subprocess, tempfile
+          from pathlib import Path
+          exe = Path('dist/打字星球.app/Contents/MacOS/打字星球').resolve()
+          assert exe.is_file(), 'Missing macOS executable'
+          with tempfile.TemporaryDirectory() as data:
+              env = dict(os.environ, HOME=data, QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software')
+              process = subprocess.Popen([str(exe)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+              try:
+                  out, err = process.communicate(timeout=10)
+              except subprocess.TimeoutExpired:
+                  process.terminate()
+                  out, err = process.communicate(timeout=15)
+                  print('macOS application remained running for smoke test.')
+              else:
+                  raise RuntimeError(f'Application exited early ({process.returncode}): {out!r} {err!r}')
       - name: Zip macOS app
         if: runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'both' || inputs.platform == matrix.platform)
         env:

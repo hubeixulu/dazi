@@ -6,3 +6,6 @@ build/
 dist/
 *.spec.bak
 .DS_Store
+
+# Original game art sheets (runtime sprites live under src/dazi/resources/games/)
+/ass/

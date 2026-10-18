@@ -2,7 +2,14 @@
 
 一个无广告、完全离线的现代打字学习软件，面向 Windows 与 macOS。内置英文指法、拼音中文、60 篇分级中文内容，以及字母雨、打字竞速、单词太空战、警察抓小偷四个小游戏。
 
-## 0.4.0 版特点
+## 0.5.0 画面重构
+
+- 四款游戏全部采用提供的插画素材：字母雨的小雨伞与字母雨滴、水上竞速的四艘小船、太空战的飞船与怪物、追逐游戏的警车与小偷车辆。
+- 游戏大厅使用插画封面；正式游玩时角色、文字和特效独立渲染，不使用整张素材拼图代替游戏画面。
+- 新增或统一暂停/继续、连击反馈、命中/失误反馈，保留难度和本地成绩；修正单词游戏的按字符准确率和竞速重复退格刷连击问题。
+- 支持“减少动画”，适配不同窗口大小；游戏关闭后停止计时。
+
+## 原有功能
 
 - 新增原创“警察抓小偷”英文打字追击游戏：准确输入路标推进警车，穿越多个街区；打错会消耗机会，路障会拉开距离，还有倒计时；胜负与连击计入本机成绩。
 - 导入自定义文章时可选择 TXT 文件、修改默认标题、填写作者，并指定简单、普通或困难。
@@ -50,14 +57,29 @@ GitHub Actions 的 **Build and publish desktop apps** 工作流支持：
 - 在 Actions 页面手动运行，输入已有版本标签（例如 `v0.4.0`），选择 `windows`、`macos` 或 `both`，即可为现有 Release 补充对应平台的下载包；构建源码固定为该标签，不移动旧标签。
 - 发布前运行测试；Windows 可执行文件经过原生启动冒烟检查；ZIP 附带 SHA-256 校验文件。
 
-### v0.4.0 下载
+### v0.5.0 下载
 
-- [Windows x64 便携版](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-windows-x64.zip)（约 176 MiB）：完整解压 ZIP 后运行文件夹中的 `打字星球.exe`，不要只复制 EXE。该包已在 GitHub Windows 环境通过测试和启动冒烟检查。
-- [Windows SHA-256 校验文件](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-windows-x64.zip.sha256)。
-- [Mac Apple 芯片版](https://github.com/hubeixulu/dazi/releases/download/v0.4.0/dazi-v0.4.0-macos-arm64.zip)：解压后打开 `打字星球.app`。
-- [全部 Releases](https://github.com/hubeixulu/dazi/releases)。
+- [Windows x64 便携版](https://github.com/hubeixulu/dazi/releases/download/v0.5.0/dazi-v0.5.0-windows-x64.zip)：完整解压 ZIP 后运行文件夹中的 `打字星球.exe`，不要只复制 EXE。
+- [Mac Apple 芯片版](https://github.com/hubeixulu/dazi/releases/download/v0.5.0/dazi-v0.5.0-macos-arm64.zip)：解压后打开 `打字星球.app`。
+- 校验文件：[Windows SHA-256](https://github.com/hubeixulu/dazi/releases/download/v0.5.0/dazi-v0.5.0-windows-x64.zip.sha256) · [Mac SHA-256](https://github.com/hubeixulu/dazi/releases/download/v0.5.0/dazi-v0.5.0-macos-arm64.zip.sha256)。
+- [当前版本 Release](https://github.com/hubeixulu/dazi/releases/tag/v0.5.0) · [历史版本](https://github.com/hubeixulu/dazi/releases)。
+
+双平台均在原生系统构建，发布前运行测试、核验游戏图片资源，并执行打包后程序启动检查。
 
 构建产物未经开发者签名/公证，首次启动可能出现系统安全提示。
+
+## 本地美术素材
+
+原始四张素材拼图放在项目根目录 `ass/`，该目录已被 `.gitignore` 排除，不提交 Git，也不打包进程序。已裁切、去背景的运行时 PNG 保存在 `src/dazi/resources/games/`，随程序源码和安装包一起分发，因此从 GitHub 获取代码后运行游戏不需要原始拼图。素材为用户提供，本项目未另行授予这些图片的使用许可，发布前请确认素材的分发授权。
+
+需要重新裁切时，仅开发者本地安装 Pillow，然后执行：
+
+```bash
+python -m pip install Pillow
+python tools/prepare_game_art.py
+```
+
+裁切坐标与源图摘要记录在资源清单中；脚本不会修改原始素材。普通运行和打包无需 Pillow。可运行 `python tools/preview_game_scenes.py` 生成各游戏的准备、游玩和暂停状态预览，输出位于 Git 忽略的 `build/game-previews/`。
 
 ## 内容说明
 

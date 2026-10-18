@@ -17,7 +17,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("打字星球")
     app.setOrganizationName("DaziAcademy")
-    app.setApplicationVersion("0.4.0")
+    app.setApplicationVersion("0.5.0")
 
     package_dir = Path(__file__).resolve().parent
     app.setWindowIcon(QIcon(str(package_dir / "resources" / "icons" / "app-icon-1024.png")))

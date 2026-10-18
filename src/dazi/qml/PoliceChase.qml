@@ -4,6 +4,9 @@ import QtQuick.Layouts
 
 Item {
     id: chase
+    objectName: "policeChaseGame"
+    property bool paused: false
+    readonly property bool ticking: active && visible && onScreen && !paused
     signal closeRequested()
 
     property string difficulty: "normal"
@@ -59,6 +62,7 @@ Item {
     }
 
     function start() {
+        paused = false
         syncingInput = true
         phraseInput.text = ""
         syncingInput = false
@@ -82,7 +86,7 @@ Item {
     Timer {
         interval: 1000
         repeat: true
-        running: chase.active && chase.visible && chase.onScreen
+        running: chase.ticking
         onTriggered: chase.applyState(backend.pursuitTick())
     }
     Timer {
@@ -90,234 +94,164 @@ Item {
         property real shift: 0
         interval: 40
         repeat: true
-        running: chase.active && chase.visible && chase.onScreen && chase.motion
-        onTriggered: shift = (shift + 2.8) % 94
+        running: chase.ticking && chase.motion
+        onTriggered: shift = (shift + (Number(chase.state.combo || 0) >= 3 ? 5.6 : 2.8)) % 2444
     }
 
     Rectangle {
-        anchors.fill: parent
-        radius: 20
-        color: "#F5F6FB"
-        border.color: "#E5E9F1"
-        clip: true
-
+        anchors.fill: parent; radius: 22; color: "#F3F5FC"; clip: true
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 16
-            spacing: 9
-
+            anchors.fill: parent; anchors.margins: 16; spacing: 8
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 12
-                Rectangle {
-                    Layout.preferredWidth: 44; Layout.preferredHeight: 44
-                    radius: 14; color: "#DFEBFF"
-                    Text { anchors.centerIn: parent; text: "✦"; color: "#3F6FDE"; font.pixelSize: 26; font.bold: true }
-                }
-                ColumnLayout {
-                    spacing: 1
-                    Text { text: "POLICE CHASE"; color: "#24334F"; font.pixelSize: 21; font.bold: true; font.letterSpacing: 1.5 }
-                    Text { text: "Type the dispatch, close the gap."; color: "#71809B"; font.pixelSize: 11 }
+                Column {
+                    Text { text: "城市追追追"; color: "#2B416A"; font.pixelSize: 25; font.bold: true }
+                    Text { text: "收到新线索！敲对口令，追上小偷"; color: "#7A89A8"; font.pixelSize: 11 }
                 }
                 Item { Layout.fillWidth: true }
                 DifficultyPicker {
-                    moduleKey: "police-chase"
+                    Layout.rightMargin: 38; moduleKey: "police-chase"
                     onSelectedByUser: function(value) {
-                        // Picker emits once on construction too: only clicks mid-chase restart.
                         var changed = chase.difficulty !== value
                         chase.difficulty = value
                         if (changed && chase.active) chase.start()
                     }
                 }
-                Item { Layout.preferredWidth: 36 }
             }
-
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
                 Repeater {
-                    model: [
-                        {name: "TIME", value: chase.timeLabel(chase.state.elapsed), accent: "#4769C9"},
-                        {name: "SCORE", value: String(chase.state.score || 0), accent: "#223B60"},
-                        {name: "COMBO", value: "×" + String(chase.state.combo || 0), accent: "#D18139"},
-                        {name: "GAP", value: Math.round(chase.gap) + " m", accent: "#C94E63"}
-                    ]
+                    model: [{name:"剩余时间",value:chase.timeLabel(Math.max(0,Number(chase.state.time_limit || 0)-Number(chase.state.elapsed || 0)))}, {name:"任务得分",value:String(chase.state.score || 0)}, {name:"连击加速",value:"×" + (chase.state.combo || 0)}, {name:"目标距离",value:Math.round(chase.gap) + " 米"}]
                     delegate: Rectangle {
                         required property var modelData
-                        Layout.fillWidth: true; Layout.preferredHeight: 53
-                        radius: 12; color: "#FFFFFF"; border.color: "#E5EAF3"
-                        Column {
-                            anchors.centerIn: parent; spacing: 2
-                            Text { text: modelData.name; color: "#8591A8"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1.2; anchors.horizontalCenter: parent.horizontalCenter }
-                            Text { text: modelData.value; color: modelData.accent; font.pixelSize: 18; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+                        Layout.fillWidth: true; Layout.preferredHeight: 48; radius: 12; color: "#FFFFFF"
+                        Column { anchors.centerIn: parent; spacing: 1
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.name; color: "#8290AA"; font.pixelSize: 10 }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.value; color: "#3E6197"; font.pixelSize: 18; font.bold: true }
                         }
                     }
                 }
             }
-
-            Item {
+            Rectangle {
                 id: scene
-                Layout.fillWidth: true; Layout.fillHeight: true
-                Layout.minimumHeight: 142
-                clip: true
-                Rectangle { anchors.fill: parent; radius: 16; color: "#DDECEB" }
-                // Layered verge and lane edges follow the same curve as the road.
+                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 185
+                radius: 16; color: "#C9E6F4"; clip: true
                 Canvas {
-                    id: road
-                    anchors.fill: parent
+                    id: city; anchors.fill: parent
                     property real shift: chase.roadShift
+                    onShiftChanged: requestPaint()
                     onWidthChanged: requestPaint()
                     onHeightChanged: requestPaint()
-                    onShiftChanged: requestPaint()
                     onPaint: {
-                        var ctx = getContext("2d")
-                        ctx.reset()
-                        var w = width, h = height
-                        function center(y) { return w / 2 + Math.sin(y / 97 + shift / 124) * Math.min(35, w * .055) }
-                        function band(half, color) {
-                            ctx.beginPath()
-                            for (var y = -8; y <= h + 10; y += 5) {
-                                if (y === -8) ctx.moveTo(center(y) - half, y)
-                                else ctx.lineTo(center(y) - half, y)
+                        var c=getContext("2d"); c.reset(); var w=width,h=height, horizon=h*.58
+                        var sky=c.createLinearGradient(0,0,0,horizon); sky.addColorStop(0,"#BBDDF4");sky.addColorStop(1,"#F7EFD9");c.fillStyle=sky;c.fillRect(0,0,w,h)
+                        c.fillStyle="#FFF4CB";c.beginPath();c.arc(w*.17,35,22,0,Math.PI*2);c.fill()
+                        for(var layer=0;layer<2;layer++) {
+                            var bw=layer?86:65, scroll=shift*(layer?.65:.22)
+                            for(var i=-2;i<w/bw+3;i++) {
+                                var bh=32+((i+18)*37%57),x=i*bw-scroll,y=horizon-bh-(layer?0:18)
+                                c.fillStyle=layer?(i%2?"#AFCCD9":"#A4C1D2"):"#D0E1E8";c.fillRect(x,y,bw-8,bh+20)
+                                if(layer){c.fillStyle="#EAF3EC";for(var a=9;a<bw-15;a+=18)for(var b=10;b<bh-4;b+=20)c.fillRect(x+a,y+b,7,9)}
                             }
-                            for (var y2 = h + 10; y2 >= -8; y2 -= 5) ctx.lineTo(center(y2) + half, y2)
-                            ctx.closePath(); ctx.fillStyle = color; ctx.fill()
                         }
-                        var half = Math.min(119, w * .23)
-                        band(half + 10, "#C6DAD4")
-                        band(half + 5, "#FFFDF5")
-                        band(half, "#303C51")
-                        ctx.strokeStyle = "#A9B5C7"; ctx.lineWidth = 2
-                        ctx.setLineDash([18, 19]); ctx.lineDashOffset = -shift
-                        ctx.beginPath()
-                        for (var ly = -8; ly < h + 10; ly += 4) {
-                            if (ly === -8) ctx.moveTo(center(ly), ly)
-                            else ctx.lineTo(center(ly), ly)
-                        }
-                        ctx.stroke(); ctx.setLineDash([])
+                        c.fillStyle="#B9D0B4";c.fillRect(0,horizon-5,w,16)
+                        c.fillStyle="#EDE5CF";c.fillRect(0,horizon+8,w,13)
+                        c.fillStyle="#657789";c.fillRect(0,horizon+21,w,h)
+                        c.fillStyle="#D7E1DE";c.fillRect(0,horizon+21,w,3)
+                        c.fillStyle="#F6E9B9";for(var j=-1;j<w/94+2;j++)c.fillRect(j*94-shift,h*.85,46,3)
+                        c.fillStyle="#A5B5BC";c.fillRect(0,h-9,w,9)
                     }
                 }
-                Repeater {
-                    model: 4
-                    delegate: Rectangle {
-                        required property int index
-                        width: 18; height: 5; radius: 2; color: "#FFFFFF"
-                        opacity: .7
-                        y: ((index * 97 + chase.roadShift * 2) % (scene.height + 24)) - 12
-                        x: scene.width / 2 + Math.sin(y / 97 + chase.roadShift / 124) * Math.min(35, scene.width * .055)
-                           + (index % 2 ? -1 : 1) * Math.min(126, scene.width * .25) - width / 2
-                    }
-                }
-                Repeater {
-                    model: chase.state.obstacles || []
-                    delegate: Rectangle {
-                        required property var modelData
-                        required property int index
-                        width: 38; height: 12; radius: 4
-                        color: "#FFC05F"; border.color: "#AD7430"; border.width: 2
-                        property real position: typeof modelData === "number" ? modelData : Number(modelData.position || 0)
-                        x: scene.width / 2 + Math.sin(y / 97 + chase.roadShift / 124) * Math.min(35, scene.width * .055)
-                           + ((index % 2) ? 53 : -53) - width / 2
-                        y: ((position * scene.height + chase.roadShift * 2) % (scene.height + 16)) - 8
-                        Text { anchors.centerIn: parent; text: "▰ ▰"; color: "#74461E"; font.pixelSize: 8 }
-                    }
-                }
-                // Higher police progress lifts the patrol car toward the escaping car.
-                Item {
-                    id: thief
-                    width: 46; height: 46
-                    y: Math.max(7, Math.min(scene.height - height - 7,
-                         scene.height * (.30 - chase.lead * .10)))
-                    x: scene.width / 2 + Math.sin((y + height / 2) / 97 + chase.roadShift / 124) * Math.min(35, scene.width * .055) + 39 - width / 2
-                    Behavior on y { enabled: chase.motion; NumberAnimation { duration: 400 } }
-                    Rectangle { anchors.centerIn: parent; width: 31; height: 43; radius: 9; color: "#F17E67"; border.color: "#C75150"; border.width: 2
-                        Rectangle { x: 5; y: 8; width: 21; height: 12; radius: 4; color: "#533C57" }
-                        Rectangle { x: 5; y: 27; width: 21; height: 8; radius: 3; color: "#F8BE95" }
-                    }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; y: -10; text: "SUSPECT"; color: "#FFF"; font.pixelSize: 8; font.bold: true }
-                }
-                Item {
+                // Side-view cars share the horizontal street. Engine gap controls separation.
+                Image {
                     id: patrol
-                    width: 48; height: 49
-                    y: Math.max(49, Math.min(scene.height - height - 5,
-                         scene.height * (.82 - chase.pursuit * .37)))
-                    x: scene.width / 2 + Math.sin((y + height / 2) / 97 + chase.roadShift / 124) * Math.min(35, scene.width * .055) - 42 - width / 2
-                    Behavior on y { enabled: chase.motion; NumberAnimation { duration: 430 } }
-                    Rectangle { anchors.centerIn: parent; width: 33; height: 43; radius: 9; color: "#FBFCFF"; border.color: "#B4C4D9"; border.width: 2
-                        Rectangle { x: 5; y: 8; width: 23; height: 15; radius: 4; color: "#4D6685" }
-                        Rectangle { x: 5; y: 28; width: 23; height: 8; radius: 3; color: "#2F619B" }
-                        Rectangle { x: 10; y: 5; width: 7; height: 4; radius: 2; color: "#EF6266" }
-                        Rectangle { x: 17; y: 5; width: 7; height: 4; radius: 2; color: "#6298F4" }
+                    width: Math.min(166, scene.width*.23); height: scene.height*.39
+                    x: scene.width*.07 + chase.pursuit*scene.width*.14
+                    y: scene.height*.59
+                    source: "../resources/games/chase-police.png"; fillMode: Image.PreserveAspectFit
+                    Behavior on x { enabled: chase.motion && chase.ticking; NumberAnimation { duration: 450 } }
+                    Image { visible: chase.active && Number(chase.state.combo || 0) >= 3; x: -width*.53; y: parent.height*.27; width: parent.width*.7; height: parent.height*.58; z: -1; source: "../resources/games/chase-boost.png"; fillMode: Image.PreserveAspectFit }
+                }
+                Image {
+                    id: thief
+                    width: Math.min(145, scene.width*.21); height: scene.height*.34
+                    x: Math.min(scene.width-width-10, patrol.x + patrol.width*.78 + Math.max(0,Math.min(1,chase.gap/150))*scene.width*.36 + chase.lead*scene.width*.05)
+                    y: scene.height*.52
+                    source: "../resources/games/chase-thief.png"; fillMode: Image.PreserveAspectFit
+                    Behavior on x { enabled: chase.motion && chase.ticking; NumberAnimation { duration: 450 } }
+                    Image { visible: chase.active; x: -30; y: parent.height*.43; width: 65; height: parent.height*.6; z: -1; source: "../resources/games/chase-smoke.png"; fillMode: Image.PreserveAspectFit; opacity: .7 }
+                }
+                Rectangle {
+                    x: 10; y: 10; width: routeText.width+20; height: 26; radius: 10; color: "#F5FAFF"
+                    Text { id: routeText; anchors.centerIn: parent; text: "街区 " + chase.state.stage + " / " + chase.state.stages; color: "#456995"; font.pixelSize: 11; font.bold: true }
+                }
+                Row {
+                    anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10; spacing: 3
+                    Repeater { model: Number(backend.gameConfig["police-chase"][chase.difficulty].lives); Image { required property int index; width: 24; height: 24; source: "../resources/games/heart.png"; fillMode: Image.PreserveAspectFit; opacity: index < Number(chase.state.lives || 0) ? 1 : .22 } }
+                }
+                Image {
+                    visible: chase.active
+                    anchors.horizontalCenter: parent.horizontalCenter; y: 13
+                    width: Math.min(290, parent.width*.44); height: parent.height*.4
+                    source: "../resources/games/chase-sign.png"; fillMode: Image.Stretch
+                    Text { anchors.fill: parent; anchors.margins: 15; text: chase.checkpoint; color: "#FFFFFF"; font.family: "Menlo"; font.pixelSize: chase.checkpoint.length>35?12:16; font.bold: true; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+                Image { visible: !chase.active && !chase.ended; anchors.fill: parent; source: "../resources/games/chase-cover.png"; fillMode: Image.PreserveAspectFit; smooth:true
+                    MouseArea { anchors.fill:parent; cursorShape:Qt.PointingHandCursor; onClicked:chase.start() }
+                }
+                Rectangle {
+                    visible: chase.ended || chase.paused
+                    anchors.fill: parent; color: "#DBF1F5FB"
+                    Image { visible: chase.state.phase === "won"; anchors.left: parent.left; anchors.leftMargin: parent.width*.08; anchors.verticalCenter: parent.verticalCenter; width: parent.width*.35; height: parent.height*.85; source: "../resources/games/chase-caught.png"; fillMode: Image.PreserveAspectFit }
+                    Column {
+                        x: chase.state.phase === "won" ? parent.width*.47 : 0
+                        width: chase.state.phase === "won" ? parent.width*.5 : parent.width
+                        anchors.verticalCenter: parent.verticalCenter; spacing: 7
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: chase.paused ? "巡逻暂停中" : chase.state.phase === "won" ? "抓到啦！任务完成" : "小偷溜走了，再追一次！"; color: "#315885"; font.pixelSize: 22; font.bold: true }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: chase.paused ? "休息一下，点击继续" : "本次得分 " + (chase.state.score || 0) + " · 最佳连击 ×" + (chase.state.best_combo || 0); color: "#7187A2"; font.pixelSize: 12 }
                     }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; y: 44; text: "YOU"; color: "#FFF"; font.pixelSize: 8; font.bold: true }
-                }
-                Rectangle {
-                    anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 11
-                    width: stagePill.width + 18; height: 26; radius: 9; color: "#F9FCFF"
-                    Text { id: stagePill; anchors.centerIn: parent; text: "ROUTE  " + chase.state.stage + " / " + chase.state.stages; color: "#304567"; font.pixelSize: 10; font.bold: true }
-                }
-                Rectangle {
-                    visible: chase.state.lives !== undefined && chase.state.lives !== null
-                    anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 11
-                    width: heartText.width + 18; height: 26; radius: 9; color: "#F9FCFF"
-                    Text { id: heartText; anchors.centerIn: parent; text: "♥  " + chase.state.lives; color: "#DB6672"; font.pixelSize: 12; font.bold: true }
                 }
             }
-
             RowLayout {
                 Layout.fillWidth: true; spacing: 7
-                Text { text: "DISPATCH ROUTE"; color: "#6D7C98"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1 }
+                Text { text: "追踪路线"; color: "#6A7F9B"; font.pixelSize: 11 }
                 Repeater {
-                    model: Math.max(1, Math.min(12, Number(chase.state.stages || 4)))
+                    model: Math.max(1,Math.min(12,Number(chase.state.stages || 4)))
                     delegate: Rectangle {
                         required property int index
                         Layout.fillWidth: true; Layout.preferredHeight: 7; radius: 4
-                        color: index < Number(chase.state.stage || 1) - 1 ? "#4ECAAB"
-                             : index === Number(chase.state.stage || 1) - 1 ? "#5983E5" : "#DFE6F1"
+                        color: index < Number(chase.state.stage || 1)-1 ? "#53B8A0" : index === Number(chase.state.stage || 1)-1 ? "#618CD5" : "#DCE4F1"
                     }
                 }
-                Text { text: Math.round(Math.max(0, Math.min(1, Number(chase.state.progress || 0))) * 100) + "%"; color: "#5274BE"; font.pixelSize: 11; font.bold: true }
+                Text { text: Math.round(chase.pursuit*100) + "%"; color: "#537ABD"; font.pixelSize: 11 }
             }
-
             Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 73
-                radius: 13; color: "#FFFFFF"; border.color: "#E5EAF3"
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 11; spacing: 3
-                    Text { text: chase.ended ? (chase.state.phase === "won" ? "CASE CLOSED" : "SUSPECT ESCAPED") : "INCOMING TRANSMISSION";
-                           color: chase.ended ? "#D26770" : "#6B82AE"; font.pixelSize: 9; font.bold: true; font.letterSpacing: 1.4 }
-                    Text {
-                        Layout.fillWidth: true
-                        text: chase.state.target || "Press START CHASE to receive your first dispatch."
-                        color: "#263750"; font.family: "Menlo"; font.pixelSize: 16; font.bold: true
-                        wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
-                    }
+                Layout.fillWidth: true; Layout.preferredHeight: 65; radius: 13; color: "white"
+                Column { anchors.fill: parent; anchors.margins: 10; spacing: 3
+                    Text { text: chase.ended ? "本次行动已结束" : "路牌口令 · 准确输入即可加速"; color: "#7B91AD"; font.pixelSize: 10; font.bold: true }
+                    Text { width: parent.width; text: chase.state.target || "准备出发！用键盘守护城市"; color: "#2D4968"; font.family: "Menlo"; font.pixelSize: 17; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
                 }
             }
-
             RowLayout {
-                Layout.fillWidth: true; spacing: 9
+                Layout.fillWidth: true; spacing: 8
                 TextField {
-                    id: phraseInput
+                    id: phraseInput; objectName: "policeChaseInput"
                     Layout.fillWidth: true; Layout.preferredHeight: 44
-                    enabled: chase.active
-                    placeholderText: chase.active ? "Type the phrase exactly…" : "Start the chase to type"
-                    font.family: "Menlo"; font.pixelSize: 14
-                    color: "#263750"; selectByMouse: true
-                    inputMethodHints: Qt.ImhPreferLatinInput | Qt.ImhNoPredictiveText
+                    enabled: chase.ticking
+                    placeholderText: chase.active ? "输入路牌上的英文口令…" : "点击出发，接收第一条线索"
+                    font.family: "Menlo"; font.pixelSize: 15; color: "#263750"; selectByMouse: true
+                    inputMethodHints: Qt.ImhPreferLatin | Qt.ImhNoPredictiveText
                     property bool correctPrefix: chase.checkpoint.indexOf(text) === 0 && text.indexOf(String(chase.state.typed || "")) === 0
-                    background: Rectangle {
-                        radius: 11; color: "#FFFFFF"; border.width: 2
-                        border.color: !phraseInput.enabled ? "#DFE6F1" : phraseInput.correctPrefix ? "#91B5E9" : "#E87680"
-                    }
+                    background: Rectangle { radius: 11; color: "#FFFFFF"; border.width: 2; border.color: !phraseInput.enabled ? "#DFE6F1" : phraseInput.correctPrefix ? "#91B5E9" : "#E87680" }
                     onTextEdited: {
-                        if (!chase.active || chase.syncingInput || inputMethodComposing) return
+                        if (!chase.ticking || chase.syncingInput || inputMethodComposing) return
                         chase.lastSubmitted = text
                         chase.editing = true
                         backend.pursuitSubmit(text)
                         chase.editing = false
                     }
                     onInputMethodComposingChanged: {
-                        if (!inputMethodComposing && chase.active && !chase.syncingInput && text !== chase.lastSubmitted) {
+                        if (!inputMethodComposing && chase.ticking && !chase.syncingInput && text !== chase.lastSubmitted) {
                             chase.lastSubmitted = text
                             chase.editing = true
                             backend.pursuitSubmit(text)
@@ -325,29 +259,16 @@ Item {
                         }
                     }
                 }
-                AppButton {
-                    Layout.preferredWidth: 127; Layout.preferredHeight: 44
-                    text: chase.active ? "RESTART" : chase.ended ? "TRY AGAIN" : "START CHASE"
-                    fillColor: chase.active ? "#E8EEF9" : "#4D71D9"
-                    textColor: chase.active ? "#43609A" : "#FFFFFF"
-                    font.pixelSize: 11
-                    onClicked: chase.start()
-                }
+                AppButton { visible: chase.active; text: chase.paused ? "继续" : "暂停"; fillColor: "#E1E9F6"; textColor: "#4C6C9C"; onClicked: { chase.paused = !chase.paused; if (!chase.paused) phraseInput.forceActiveFocus() } }
+                AppButton { text: chase.active ? "重新出发" : chase.ended ? "再追一次" : "开始追逐"; fillColor: "#537ED3"; onClicked: chase.start() }
             }
             RowLayout {
-                Layout.fillWidth: true; spacing: 8
-                Text {
-                    Layout.fillWidth: true
-                    text: chase.state.message || (chase.active ? "Keep your eyes on the road and your hands on the keys." : "Ready when you are.")
-                    color: chase.state.phase === "lost" ? "#C65D65" : "#687B99"
-                    font.pixelSize: 11; elide: Text.ElideRight
-                }
-                Text { text: "BEST ×" + (chase.state.best_combo || 0) + "   ·   " + (chase.state.accuracy === undefined ? 100 : Math.round(chase.state.accuracy)) + "% accuracy";
-                       color: "#7F8BA0"; font.pixelSize: 10 }
+                Layout.fillWidth: true
+                Text { Layout.fillWidth: true; text: chase.ended ? (chase.state.phase === "won" ? "城市恢复平静，你就是键盘小英雄！" : "调整节奏，准确输入，下次一定能追上！") : "连续正确输入，缩短距离；留意爱心和街区进度。"; color: "#7B8EA6"; font.pixelSize: 10; elide: Text.ElideRight }
+                Text { text: "准确率 " + (chase.state.accuracy === undefined ? 100 : Math.round(chase.state.accuracy)) + "%"; color: "#6F85A0"; font.pixelSize: 10 }
             }
         }
     }
-
     function timeLabel(seconds) {
         var count = Math.max(0, Math.floor(Number(seconds || 0)))
         return Math.floor(count / 60) + ":" + (count % 60 < 10 ? "0" : "") + count % 60
